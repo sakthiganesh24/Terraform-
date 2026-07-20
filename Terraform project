@@ -1,0 +1,150 @@
+resource "aws_vpc" "aws_vpc_1" {
+  cidr_block       = "10.0.0.0/16"
+  instance_tenancy = "default"
+
+  tags = {
+    Name = "vpc-terra"
+
+  }
+}
+
+resource "aws_subnet" "public-sub" {
+  vpc_id                  = aws_vpc.aws_vpc_1.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "ap-south-1a"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "sub.aws"
+  }
+}
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.aws_vpc_1.id
+
+  tags = {
+    Name = "gateway"
+  }
+}
+
+resource "aws_route_table" "my-route-table" {
+  vpc_id = aws_vpc.aws_vpc_1.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "my-route-aws"
+  }
+}
+resource "aws_route_table_association" "route-asso" {
+  subnet_id      = aws_subnet.public-sub.id
+  route_table_id = aws_route_table.my-route-table.id
+}
+
+resource "aws_security_group" "web_sg" {
+  name        = "web-security-group"
+  description = "Allow SSH and HTTP"
+  vpc_id      = aws_vpc.aws_vpc_1.id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "web-sg"
+  }
+}
+
+resource "aws_instance" "ec2" {
+  ami                    = "ami-0098dcd2a2aca5b90"
+  instance_type          = "t3.micro"
+  subnet_id              = aws_subnet.public-sub.id
+  vpc_security_group_ids = [aws_security_group.web_sg.id]
+
+  tags = {
+    Name = "terraform-ec2"
+  }
+}
+
+resource "aws_s3_bucket" "bucket" {
+  bucket = "vinoth-terraform-2026-0715"
+
+  tags = {
+    Name = "terraform-bucket"
+  }
+
+resource "aws_cloudfront_distribution" "cdn" {
+
+  origin {
+    domain_name = aws_s3_bucket.bucket.bucket_regional_domain_name
+    origin_id   = "S3Origin"
+  }
+
+  enabled = true
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3Origin"
+
+    viewer_protocol_policy = "redirect-to-https"
+
+    forwarded_values {
+      query_string = false
+
+      cookies {
+        forward = "none"
+      }
+    }
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+#outputs
+output "vpc_id" {
+  value = aws_vpc.aws_vpc_1.id
+}
+
+output "subnet_id" {
+  value = aws_subnet.public-sub.id
+}
+
+output "instance_id" {
+  value = aws_instance.ec2.id
+}
+
+output "public_ip" {
+  value = aws_instance.ec2.public_ip
+}
+
+output "bucket_name" {
+  value = aws_s3_bucket.bucket.bucket
+}
+}
